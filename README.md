@@ -1,15 +1,15 @@
 # Generative Flower — Order × Chaos
 
-**🌐 Web ページ: https://york-14.github.io/Generative-flower-Order-Chaos/**
+**🌐 Web ページ: https://symbealab.github.io/Generative-flower-Order-Chaos/**
 
 | ページ | URL |
 |---|---|
-| 2D 版 | https://york-14.github.io/Generative-flower-Order-Chaos/ |
-| 2D 版 ver.2（3 × 3） | https://york-14.github.io/Generative-flower-Order-Chaos/2d-v2.html |
-| 3D 版 | https://york-14.github.io/Generative-flower-Order-Chaos/3d.html |
-| 3D 版 ver.2 | https://york-14.github.io/Generative-flower-Order-Chaos/3d-v2.html |
-| 3D 版 ver.3 | https://york-14.github.io/Generative-flower-Order-Chaos/3d-v3.html |
-| コースター STL | https://york-14.github.io/Generative-flower-Order-Chaos/stl/ |
+| 2D 版 | https://symbealab.github.io/Generative-flower-Order-Chaos/ |
+| 2D 版 ver.2（3 × 3） | https://symbealab.github.io/Generative-flower-Order-Chaos/2d-v2.html |
+| 3D 版 | https://symbealab.github.io/Generative-flower-Order-Chaos/3d.html |
+| 3D 版 ver.2 | https://symbealab.github.io/Generative-flower-Order-Chaos/3d-v2.html |
+| 3D 版 ver.3 | https://symbealab.github.io/Generative-flower-Order-Chaos/3d-v3.html |
+| コースター STL | https://symbealab.github.io/Generative-flower-Order-Chaos/stl/ |
 
 対称カオス写像（*symmetric icons*）が描く「花」のような図形を大量に探索し、
 
@@ -202,7 +202,7 @@ python shape_map.py --run out/run1 --out my_map    # 出力先を指定
 
 ### 2D 版 ver.2（`docs/2d-v2.html`）
 
-**🌐 https://york-14.github.io/Generative-flower-Order-Chaos/2d-v2.html**
+**🌐 https://symbealab.github.io/Generative-flower-Order-Chaos/2d-v2.html**
 
 2D 版（`docs/index.html`）はそのままに、一枚のビジュアル（1 つのキャンバス）の上に花を 3 × 3 で 9 つ配置し、それぞれに異なるパラメータをランダムに適用する版です。色は 9 つ共通の 1 系統です。
 
@@ -218,7 +218,7 @@ python shape_map.py --run out/run1 --out my_map    # 出力先を指定
 
 ### コースター STL（`docs/stl/`）
 
-**🌐 https://york-14.github.io/Generative-flower-Order-Chaos/stl/**
+**🌐 https://symbealab.github.io/Generative-flower-Order-Chaos/stl/**
 
 花の構造（軌道の線）だけを残したレース状のコースターを作り、Bambu Lab などで印刷できる STL を書き出す。スマホでも使える。
 
@@ -229,13 +229,13 @@ python shape_map.py --run out/run1 --out my_map    # 出力先を指定
 | 調整 | 外径・厚み・しきい値・線の太さ・輪郭の丸み・ブリッジ幅・最小の穴など。変えるたびに Web Worker で再計算し、2D（印刷される部分）と 3D で確認 |
 | FDM 向け（既定） | 上面を平らにし、輪郭をなめらかな曲線（等高線 → Douglas–Peucker → earcut で三角形分割）で作る。スライサーの線がうねらず、アイロンで上面をつるっと仕上げられる。オフにすると明るさに応じた凹凸付き |
 | 出力 | 底が平らな閉じた形状（watertight）の binary STL（mm、z 上）。スマホでは共有シート（ファイルに保存・AirDrop）に渡す。画面に Bambu Studio のおすすめ設定 |
-| 開発 | Private リポジトリ York-14/order-chaos-stl で開発し、`docs/stl/` にコピーして公開。Node 用のテスト（閉じた形状の検査、9 つの花の一括確認）もそちら |
+| 開発 | Private リポジトリ Symbealab/order-chaos-stl で開発し、`docs/stl/` にコピーして公開。Node 用のテスト（閉じた形状の検査、9 つの花の一括確認）もそちら |
 
 周期軌道（点の集まり）になった花は形にならないので、理由を表示して止める。
 
 ### 3D 版 ver.3（`docs/3d-v3.html`）
 
-**🌐 https://york-14.github.io/Generative-flower-Order-Chaos/3d-v3.html**
+**🌐 https://symbealab.github.io/Generative-flower-Order-Chaos/3d-v3.html**
 
 ver.2 の全モードに、流体力学に基づく「煙」モードを加えたものです。アトラクタの密度を発生源にして、非圧縮性流体（Stable Fluids：MacCormack 移流・浮力・渦度閉じ込め・圧力の Jacobi 反復・移流拡散）を GPU 上で解き、ver.2 のインク用ボリュームレンダラで描きます。
 
@@ -249,7 +249,7 @@ ver.2 の全モードに、流体力学に基づく「煙」モードを加え�
 
 ### 3D 版 ver.2（`docs/3d-v2.html`）
 
-**🌐 https://york-14.github.io/Generative-flower-Order-Chaos/3d-v2.html**
+**🌐 https://symbealab.github.io/Generative-flower-Order-Chaos/3d-v2.html**
 
 3D 版の写像を、点群に加えて 3D 密度ボリュームとしても描きます。軌道を n 回回転（ω = 0 なら鏡映も）で複製して 3D ヒストグラム（128³ / 192³）を作り、Web Worker で log 圧縮・ガウスぼかしをかけて WebGL2 の 3D テクスチャに格納します。
 
@@ -265,7 +265,7 @@ ver.2 の全モードに、流体力学に基づく「煙」モードを加え�
 
 ### 3D 版（`docs/3d.html`）
 
-**🌐 https://york-14.github.io/Generative-flower-Order-Chaos/3d.html**
+**🌐 https://symbealab.github.io/Generative-flower-Order-Chaos/3d.html**
 
 平面の写像に実数の高さ *w* を加えた 3 次元の写像を、WebGL2 で立体表示します。
 

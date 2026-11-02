@@ -1,5 +1,5 @@
 /* flower-core.js — Order&Chaos 2D ver.2 と同じ写像・シード乱数・パレット
- * 出典: github.com/York-14/Generative-flower-Order-Chaos (docs/2d-v2.html) からそのまま移植。
+ * 出典: github.com/Symbealab/Generative-flower-Order-Chaos (docs/2d-v2.html) からそのまま移植。
  * ブラウザ（window / Worker）と Node の両方で使える。 */
 (function (root) {
 "use strict";
