@@ -9,6 +9,7 @@
 | 3D 版 | https://symbealab.github.io/Generative-flower-Order-Chaos/3d.html |
 | 3D 版 ver.2 | https://symbealab.github.io/Generative-flower-Order-Chaos/3d-v2.html |
 | 3D 版 ver.3 | https://symbealab.github.io/Generative-flower-Order-Chaos/3d-v3.html |
+| 流線の花畑（ver.3 の流線を上から・複数配置） | https://symbealab.github.io/Generative-flower-Order-Chaos/garden.html |
 | コースター STL | https://symbealab.github.io/Generative-flower-Order-Chaos/stl/ |
 
 対称カオス写像（*symmetric icons*）が描く「花」のような図形を大量に探索し、
