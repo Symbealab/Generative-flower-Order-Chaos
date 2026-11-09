@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#05060b">
 <title>Flower Garden — 流線の花畑</title>
-<meta name="description" content="3D 版 ver.3 の流線を上から見た姿だけを使い、パラメータを少しずつ変えた花を大・中・小ランダムに画面いっぱいに並べて動かす。">
+<meta name="description" content="3D 版 ver.3 の流線を上から見た姿だけを使い、形の方向性と色を選び、パラメータを少しずつ変えた花を大・中・小ランダムに画面いっぱいに並べて動かす。">
 <style>
 :root { --bg: #05060b; --fg: #e8ecf6; --muted: #8d93a6; --bar: rgba(16, 18, 28, .72); --line: rgba(255, 255, 255, .14); --accent: #f07aa8; }
 * { box-sizing: border-box; }
@@ -30,6 +30,26 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
 #bar button.primary { background: var(--accent); color: #fff; }
 #status { position: fixed; left: 12px; top: calc(8px + env(safe-area-inset-top)); font: 11px ui-monospace, Menlo, monospace;
   color: var(--muted); pointer-events: none; transition: opacity .6s; }
+#panel {
+  position: fixed; left: 50%; transform: translateX(-50%); width: min(360px, calc(100vw - 24px));
+  bottom: calc(66px + env(safe-area-inset-bottom)); max-height: calc(100dvh - 100px); overflow-y: auto;
+  padding: 14px 16px; border-radius: 16px; background: var(--bar); border: 1px solid var(--line);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+#panel h4 { margin: 12px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; }
+#panel h4:first-child { margin-top: 0; }
+#panel select { width: 100%; font: inherit; font-size: 14px; color: var(--fg); background: rgba(255,255,255,.06);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+#panel select option { background: #15141c; }
+#panel .note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+#panel .colors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+#panel .colors label { display: grid; gap: 2px; font-size: 11px; color: var(--muted); text-align: center; }
+#panel input[type=color] { width: 100%; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+#panel .seg { display: grid; grid-auto-flow: column; gap: 6px; }
+#panel .seg button { font: inherit; font-size: 13px; color: var(--fg); background: rgba(255,255,255,.06); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 0; cursor: pointer; }
+#panel .seg button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+#bar button[aria-expanded=true] { background: rgba(255,255,255,.14); }
 #nogl { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: #ccc; }
 </style>
 </head>
@@ -37,19 +57,26 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
 <canvas id="gl" aria-label="流線で描いた対称カオス写像の花が、大きさを変えて画面いっぱいに並ぶ"></canvas>
 <div id="status"></div>
 <div id="nogl" hidden>この環境では WebGL2 が使えません。</div>
+<div id="panel" hidden>
+  <h4>方向性（元にする形）</h4>
+  <select id="preset" aria-label="方向性"></select>
+  <p class="note" id="presetNote"></p>
+  <h4>色</h4>
+  <select id="style" aria-label="色"></select>
+  <div class="colors">
+    <label>背景<input type="color" id="cBg"></label>
+    <label>線（暗）<input type="color" id="c1"></label>
+    <label>線（明）<input type="color" id="c2"></label>
+  </div>
+  <h4>大きさ</h4>
+  <div class="seg" id="sizeSeg"><button data-v="0.7">小さめ</button><button data-v="1">ふつう</button><button data-v="1.4">大きめ</button></div>
+  <h4>ゆらぎ（元の形からの離れ方）</h4>
+  <div class="seg" id="varySeg"><button data-v="0.25">小</button><button data-v="0.55">中</button><button data-v="1">大</button></div>
+</div>
 <div id="bar">
   <a href="3d-v3.html" title="3D 版 ver.3 へ">←</a>
   <button id="regen" class="primary">咲き直す</button>
-  <select id="palette" aria-label="色">
-    <option value="night">夜光</option>
-    <option value="gold">金糸</option>
-    <option value="mix">色とりどり</option>
-  </select>
-  <select id="vary" aria-label="ゆらぎ">
-    <option value="0.25">ゆらぎ 小</option>
-    <option value="0.55" selected>ゆらぎ 中</option>
-    <option value="1">ゆらぎ 大</option>
-  </select>
+  <button id="settings" aria-expanded="false" aria-controls="panel">設定</button>
   <button id="save">PNG</button>
 </div>
 
@@ -60,8 +87,36 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   const gl = canvas.getContext("webgl2", { antialias: true, premultipliedAlpha: false, preserveDrawingBuffer: false });
   if (!gl || typeof Worker === "undefined") { $("nogl").hidden = false; $("bar").hidden = true; return; }
 
-  // 元にする形：3D 版 ver.3 のプリセット「菊 — Chrysanthemum」
-  const BASE = { n: 12, lam: -2.661, alpha: 3.61, beta: 0.31, gamma: -0.437, omega: 0, kap: -0.226, mu: 0.6, del: -0.138, eps: 0.289 };
+  // 元にする形：3D 版 ver.3 のプリセット（花ごとに少しずつ揺らす）
+  const PRESETS = [
+    ["菊 — Chrysanthemum", { n: 12, lam: -2.661, alpha: 3.61, beta: 0.31, gamma: -0.437, omega: 0, kap: -0.226, mu: 0.6, del: -0.138, eps: 0.289 },
+      "12 回対称に並ぶ小花の粒。中心ほど密になる。"],
+    ["クラゲ — Jellyfish", { n: 10, lam: 2.591, alpha: -4.072, beta: 1.106, gamma: -0.888, omega: 0.163, kap: -0.154, mu: 0.279, del: -0.719, eps: -0.432 },
+      "傘のひだは 10 回対称に整い、縁は不規則に波打つ。"],
+    ["薔薇 — Rose", { n: 5, lam: 2.564, alpha: -3.498, beta: 0.407, gamma: 1.121, omega: 0.085, kap: 0.083, mu: 0.442, del: 0.445, eps: 0.481 },
+      "ω ≠ 0 で鏡映が破れ、花弁が一方向に巻き込む 5 回対称。"],
+    ["百合 — Lily", { n: 3, lam: 2.287, alpha: -4.237, beta: -1.344, gamma: 0.181, omega: 0, kap: -0.193, mu: 0.775, del: -0.563, eps: -0.014 },
+      "単子葉植物の花と同じ 3 回対称のつぼみ。"],
+    ["蓮の花托 — Lotus Pod", { n: 10, lam: 2.285, alpha: -2.005, beta: -0.524, gamma: 1.167, omega: 0, kap: 0, mu: 0.679, del: 0.075, eps: 0.318 },
+      "同心円状に並ぶ穴。"],
+    ["イソギンチャク — Sea Anemone", { n: 11, lam: -2.007, alpha: 1.74, beta: 0.77, gamma: 1.022, omega: 0, kap: 0.111, mu: 0.491, del: -0.62, eps: 0.493 },
+      "放射状に伸びる触手。一本ごとの起伏はカオスが決める。"],
+    ["ウニの殻 — Urchin Test", { n: 11, lam: 2.723, alpha: -4.085, beta: 1.064, gamma: -0.668, omega: 0, kap: -0.259, mu: 0.464, del: 0.012, eps: 0.457 },
+      "ドーム状の殻に刻まれた放射状の溝。"],
+    ["ハイビスカス — Hibiscus", { n: 6, lam: -2.442, alpha: 4.305, beta: 1.447, gamma: -0.619, omega: 0.18, kap: -0.202, mu: 0.522, del: 0.843, eps: -0.379 },
+      "重なり合う 6 枚の花弁。花弁が交互に反る。"],
+    ["朝顔 — Morning Glory", { n: 9, lam: -2.637, alpha: 4.544, beta: -0.323, gamma: 1.084, omega: 0, kap: -0.01, mu: 0.302, del: -0.305, eps: 0.003 },
+      "ひだを畳んだラッパ形。折り目は 9 回対称。"],
+    ["サンゴ — Coral", { n: 8, lam: 2.356, alpha: -4.973, beta: -0.914, gamma: 0.184, omega: 0.277, kap: -0.149, mu: 0.545, del: 0.347, eps: -0.279 },
+      "環状に群れて育つ、ねじれた枝の塊。"],
+  ];
+  const MIX = "mix";
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+  const opt = { preset: "0", style: "0", bg: null, c1: null, c2: null, size: 1, vary: 0.55, ...(store.get("gfoc.garden.v2") || {}) };
+  const saveOpt = () => store.set("gfoc.garden.v2", opt);
   // 流線の設定（ver.3 の初期値）
   const FLOW = { phi: 82, thr: 0.45, minSize: 0.16 };
   const VB = 1.08, VW = 1.25;
@@ -133,8 +188,8 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
         lam: base.lam + g() * 0.5, alpha: base.alpha + g() * 1.0, beta: base.beta + g() * 0.5,
         gamma: base.gamma + g() * 0.45, kap: base.kap + g() * 0.12, mu: Math.min(0.92, Math.max(0.15, base.mu + g() * 0.18)),
         del: base.del + g() * 0.45, eps: base.eps + g() * 0.25 };
-      if (Math.random() < v * 0.7) c.n = 5 + Math.floor(Math.random() * 10);           // 対称の数も時々変える
-      if (Math.random() < v * 0.2) c.omega = rnd(-0.15, 0.15);                        // まれに鏡映を破る
+      if (Math.random() < v * 0.5) c.n = Math.max(3, Math.min(14, base.n + Math.round(g() * 3)));   // 対称の数も時々変える
+      if (base.omega === 0 ? Math.random() < v * 0.15 : true) c.omega = base.omega + g() * 0.1;      // 鏡映を破る形はそのまま揺らす
       return c;
     }
     function search(base, v, exact) {
@@ -412,29 +467,49 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   const LP = gl.getAttribLocation(prog, "aPos"), LA = gl.getAttribLocation(prog, "aAttr");
 
   const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
-  const INKS = {
-    night: [["#1f6bff", "#c8f6ff"]],
-    gold:  [["#9c561a", "#ffe3a3"]],
-    mix:   [["#1f6bff", "#c8f6ff"], ["#9c561a", "#ffe3a3"], ["#c2306e", "#ffd6ea"], ["#138a72", "#c9ffe9"],
-            ["#6b3cff", "#e6dcff"], ["#1f6bff", "#c8f6ff"]],
+  // 色：[名前, 背景, [線の暗い色, 明るい色] の組]。組が複数あるものは花ごとに選ぶ
+  const STYLES = [
+    ["夜光", "#05060b", [["#1f6bff", "#c8f6ff"]]],
+    ["金糸", "#0c0907", [["#9c561a", "#ffe3a3"]]],
+    ["夜桜", "#0b0509", [["#c2306e", "#ffd6ea"]]],
+    ["翡翠の夜", "#03090a", [["#138a72", "#c9ffe9"]]],
+    ["菫", "#07050f", [["#6b3cff", "#e6dcff"]]],
+    ["炎", "#0a0503", [["#b8320c", "#ffd08a"]]],
+    ["色とりどり（夜）", "#05060b", [["#1f6bff", "#c8f6ff"], ["#9c561a", "#ffe3a3"], ["#c2306e", "#ffd6ea"], ["#138a72", "#c9ffe9"], ["#6b3cff", "#e6dcff"]]],
+    ["墨流し", "#f3eee4", [["#7a7f8a", "#111318"]]],
+    ["紅と藍", "#f6efe8", [["#e0507f", "#1c1757"]]],
+    ["藍染", "#eef2f3", [["#5b8fd0", "#0b1e4d"]]],
+    ["翡翠", "#f1f4ef", [["#4fbf9a", "#073b30"]]],
+    ["色とりどり（和紙）", "#f4efe6", [["#e0507f", "#1c1757"], ["#5b8fd0", "#0b1e4d"], ["#4fbf9a", "#073b30"], ["#d08a3a", "#3a1a05"], ["#7a7f8a", "#111318"]]],
+  ];
+  const style = () => {
+    if (opt.style !== "") return { bg: STYLES[+opt.style][1], inks: STYLES[+opt.style][2] };
+    return { bg: opt.bg || "#05060b", inks: [[opt.c1 || "#1f6bff", opt.c2 || "#c8f6ff"]] };
   };
-  let palette = "night";
-  try { palette = localStorage.getItem("gfoc.garden.palette") || "night"; } catch {}
-  if (!INKS[palette]) palette = "night";
-  $("palette").value = palette;
-  function inkFor(f) { const l = INKS[palette]; return l[f.inkIdx % l.length].map(hex); }
+  let bgRGB = [0, 0, 0], dark = true, inksRGB = [];
+  function applyStyle() {
+    const st = style();
+    bgRGB = hex(st.bg); inksRGB = st.inks.map(p => p.map(hex));
+    dark = 0.2126 * bgRGB[0] + 0.7152 * bgRGB[1] + 0.0722 * bgRGB[2] < 0.45;
+    document.body.style.background = st.bg;
+    document.querySelector('meta[name="theme-color"]').content = st.bg;
+    $("cBg").value = st.bg; $("c1").value = st.inks[0][0]; $("c2").value = st.inks[0][1];
+  }
+  const inkFor = f => inksRGB[f.inkIdx % inksRGB.length];
 
   // ==================================================================================
   // 配置：大・中・小の円をランダムに、重なりを少しだけ許して画面いっぱいに詰める
   // ==================================================================================
   let flowers = [], W = 0, H = 0, dpr = 1;
+  const MAX = coarse ? 60 : 100;                            // 描画が重くなりすぎないよう上限
   const SIZES = {
-    L: { d: [0.62, 0.86], res: 96, total: 5e6, grid: 52, steps: 320, maxVerts: coarse ? 50000 : 80000, tries: 50000 },
-    M: { d: [0.36, 0.50], res: 80, total: 3e6, grid: 42, steps: 260, maxVerts: coarse ? 22000 : 32000, tries: 30000 },
-    S: { d: [0.17, 0.27], res: 64, total: 1.6e6, grid: 32, steps: 190, maxVerts: 9000, tries: 16000 },
+    L: { d: [0.44, 0.56], res: 80, total: 3.5e6, grid: 44, steps: 280, maxVerts: coarse ? 16000 : 28000, tries: 36000 },
+    M: { d: [0.27, 0.35], res: 64, total: 2e6, grid: 32, steps: 200, maxVerts: coarse ? 4500 : 8000, tries: 20000 },
+    S: { d: [0.13, 0.20], res: 56, total: 1.1e6, grid: 24, steps: 140, maxVerts: coarse ? 1500 : 2500, tries: 10000 },
   };
   function layout() {
-    const m = Math.min(W, H), area = W * H, out = [];
+    // 大きさの基準：短辺に「大きさ」の設定を掛ける（大きい画面でも花が巨大にならないよう 520px で頭打ち）
+    const m = Math.min(W, H, 520) * opt.size, area = W * H, out = [];
     const rnd = (a, b) => a + Math.random() * (b - a);
     const fits = (x, y, r) => out.every(o => Math.hypot(o.x - x, o.y - y) >= (o.r + r) * 0.86);
     const place = (cls, count, attempts) => {
@@ -447,24 +522,28 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
         }
       }
     };
-    const nL = Math.max(1, Math.round(area / (m * m) * (0.9 + Math.random() * 0.6)));
-    place("L", nL, 300);
-    place("M", Math.round(area / (m * m) * 4), 300);
-    place("S", 40, 300);
+    const k = area / (m * m);
+    place("L", Math.max(1, Math.round(k * (0.9 + Math.random() * 0.5))), 300);
+    place("M", Math.round(k * 4.5), 300);
+    place("S", 120, 300);
     // 残った隙間にもう一度、中→小の順で
-    place("M", 4, 200); place("S", 20, 200);
-    return out.slice(0, 40);
+    place("M", 8, 200); place("S", 60, 200);
+    return out.slice(0, MAX);
   }
 
   function newFlower(o, first) {
     const cfg = SIZES[o.cls];
     const f = { cls: o.cls, x: o.x, y: o.y, r: o.r, cfg: { res: cfg.res, total: cfg.total,
                 lines: { phi: FLOW.phi, grid: cfg.grid, thr: FLOW.thr, steps: cfg.steps, tries: cfg.tries, maxVerts: cfg.maxVerts, minSize: FLOW.minSize } },
-                base: BASE, vary: +$("vary").value, exact: !!first,
+                ...pickBase(), vary: opt.vary, exact: !!first,
                 angle: Math.random() * 6.283, spin: (Math.random() < 0.5 ? -1 : 1) * (0.02 + Math.random() * 0.06) * (o.cls === "S" ? 1.6 : o.cls === "M" ? 1.2 : 1),
                 tOff: Math.random() * 10, tempo: 0.55 + Math.random() * 0.35, inkIdx: Math.floor(Math.random() * 60),
                 vao: null, vbo: null, ibo: null, count: 0, ready: false, born: 0 };
     return f;
+  }
+  function pickBase() {
+    const i = opt.preset === MIX ? Math.floor(Math.random() * PRESETS.length) : +opt.preset;
+    return { base: PRESETS[i][1], presetIdx: i };
   }
   function freeFlower(f) {
     f.dead = true;
@@ -477,7 +556,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     flowers.forEach(freeFlower);
     const L = layout();
     L.sort((a, b) => b.r - a.r);
-    flowers = L.map((o, i) => newFlower(o, i === 0));     // 一番大きい花は元の「菊」そのもの
+    flowers = L.map((o, i) => newFlower(o, i === 0));     // 一番大きい花は選んだプリセットそのもの
     flowers.slice().forEach(enqueue);
   }
 
@@ -527,9 +606,11 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     if (!paused) clock += dt;
     if (resize()) regenerate();
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0.0196, 0.0235, 0.043, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clearColor(bgRGB[0], bgRGB[1], bgRGB[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(prog);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);       // 暗い背景に光の線を加算
+    gl.enable(gl.BLEND);
+    if (dark) gl.blendFunc(gl.ONE, gl.ONE);                 // 暗い背景：光の線を加算
+    else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);      // 明るい背景：墨を重ねる
     gl.uniform1f(U.uGlow, 1);
     for (const f of flowers) {
       if (!f.ready) continue;
@@ -541,7 +622,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
       gl.uniform1i(U.uN, f.n);
       gl.uniform3fv(U.uC1, c1); gl.uniform3fv(U.uC2, c2);
       // 小さな花は線が重なって白飛びしやすいので少し薄く
-      gl.uniform1f(U.uAlpha, 0.4 * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1));
+      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1));
       gl.uniform1f(U.uTime, f.tOff + clock * f.tempo);
       gl.bindVertexArray(f.vao);
       gl.drawElementsInstanced(gl.LINE_STRIP, f.count, gl.UNSIGNED_INT, 0, f.reps);
@@ -556,10 +637,37 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   // 操作
   // ==================================================================================
   $("regen").addEventListener("click", regenerate);
-  $("vary").addEventListener("change", regenerate);
-  $("palette").addEventListener("change", () => {
-    palette = $("palette").value;
-    try { localStorage.setItem("gfoc.garden.palette", palette); } catch {}
+  const presetSel = $("preset");
+  PRESETS.forEach(([name], i) => presetSel.append(new Option(name, i)));
+  presetSel.append(new Option("ミックス — すべての形から", MIX));
+  if (![...presetSel.options].some(o => o.value === opt.preset)) opt.preset = "0";
+  presetSel.value = opt.preset;
+  const presetNote = () => { $("presetNote").textContent = opt.preset === MIX ? "花ごとに 10 種のプリセットから選んで揺らす。" : PRESETS[+opt.preset][2]; };
+  presetSel.addEventListener("change", () => { opt.preset = presetSel.value; presetNote(); saveOpt(); regenerate(); });
+
+  const styleSel = $("style");
+  STYLES.forEach(([name], i) => styleSel.append(new Option(name, i)));
+  styleSel.append(new Option("カスタム（下の 3 色）", ""));
+  if (opt.style !== "" && !STYLES[+opt.style]) opt.style = "0";
+  styleSel.value = opt.style;
+  styleSel.addEventListener("change", () => { opt.style = styleSel.value; applyStyle(); saveOpt(); });
+  for (const [id, k] of [["cBg", "bg"], ["c1", "c1"], ["c2", "c2"]])
+    $(id).addEventListener("input", () => {
+      if (opt.style !== "") { const st = style(); opt.bg = st.bg; opt.c1 = st.inks[0][0]; opt.c2 = st.inks[0][1]; }
+      opt[k] = $(id).value; opt.style = ""; styleSel.value = ""; applyStyle(); saveOpt();
+    });
+
+  function seg(id, key) {
+    const btns = [...$(id).querySelectorAll("button")];
+    const sync = () => btns.forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === opt[key]));
+    btns.forEach(b => b.addEventListener("click", () => { opt[key] = +b.dataset.v; sync(); saveOpt(); regenerate(); }));
+    sync();
+  }
+  seg("sizeSeg", "size"); seg("varySeg", "vary");
+
+  $("settings").addEventListener("click", () => {
+    const open = $("panel").hidden;
+    $("panel").hidden = !open; $("settings").setAttribute("aria-expanded", open);
   });
   $("save").addEventListener("click", () => {
     frame.capture = () => {
@@ -573,6 +681,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     let hit = null, best = Infinity;
     for (const f of flowers) { const d = Math.hypot(f.x - x, f.y - y) / f.r; if (d < 0.9 && d < best) { best = d; hit = f; } }
     wake();
+    if (!$("panel").hidden) { $("panel").hidden = true; $("settings").setAttribute("aria-expanded", false); return; }
     if (!hit) return;
     const now = performance.now();
     if (lastTap.f === hit && now - lastTap.t < 350 && hit.q) {
@@ -592,10 +701,11 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   });
   // 操作バーはしばらく触らないと消える
   let idleTimer = null;
-  function wake() { $("bar").classList.remove("idle"); clearTimeout(idleTimer); idleTimer = setTimeout(() => $("bar").classList.add("idle"), 4000); }
+  function wake() { $("bar").classList.remove("idle"); clearTimeout(idleTimer); idleTimer = setTimeout(() => { if ($("panel").hidden) $("bar").classList.add("idle"); else wake(); }, 4000); }
   for (const ev of ["pointermove", "pointerdown", "keydown"]) window.addEventListener(ev, wake, { passive: true });
   document.addEventListener("visibilitychange", () => { paused = document.hidden; last = performance.now(); });
 
+  presetNote(); applyStyle();
   resize(); regenerate(); wake();
   requestAnimationFrame(frame);
 })();
