@@ -72,6 +72,8 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   <div class="seg" id="sizeSeg"><button data-v="0.5">小さめ</button><button data-v="0.7">ふつう</button><button data-v="1">大きめ</button></div>
   <h4>ゆらぎ（元の形からの離れ方）</h4>
   <div class="seg" id="varySeg"><button data-v="0.25">小</button><button data-v="0.55">中</button><button data-v="1">大</button></div>
+  <h4>自動で咲き直す（12 秒後に心拍 → 加速とノイズ → 次の花へ）</h4>
+  <div class="seg" id="autoSeg"><button data-v="1">オン</button><button data-v="0">オフ</button></div>
 </div>
 <div id="bar">
   <a href="3d-v3.html" title="3D 版 ver.3 へ">←</a>
@@ -116,7 +118,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   };
   // 基本のデザイン：形は「ミックス」、色は「紅と藍」、大きさは「ふつう」
-  const opt = { preset: "mix", style: "0", bg: null, c1: null, c2: null, size: 0.7, vary: 0.55, ...(store.get("gfoc.garden.v3") || {}) };
+  const opt = { preset: "mix", style: "0", bg: null, c1: null, c2: null, size: 0.7, vary: 0.55, auto: 1, ...(store.get("gfoc.garden.v3") || {}) };
   const saveOpt = () => store.set("gfoc.garden.v3", opt);
   // 流線の設定（ver.3 の初期値）
   const FLOW = { phi: 82, thr: 0.45, minSize: 0.16 };
@@ -440,14 +442,21 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   const prog = compile(`#version 300 es
     in vec2 aPos; in vec4 aAttr;
     uniform vec2 uCenter, uScale; uniform float uAngle; uniform int uN;
+    uniform float uScan, uBand, uTear, uSeed;              // 走査線の位置（クリップ座標 y）・帯の高さ・横ずれの強さ
     out vec4 vA;
+    float hash(float x) { return fract(sin(x * 127.1 + uSeed * 311.7) * 43758.5453); }
     void main() {
       int k = gl_InstanceID % uN;
       vec2 p = aPos;
       if (gl_InstanceID >= uN) p.y = -p.y;                                  // 鏡映
       float a = 6.28318530718 * float(k) / float(uN) + uAngle, c = cos(a), s = sin(a);
       p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);                       // n 回回転 ＋ ゆっくり自転
-      gl_Position = vec4(uCenter + p * uScale, 0.0, 1.0);
+      vec2 P = uCenter + p * uScale;
+      // 走査線の後ろ（上側）の帯で、細い横の帯ごとにランダムに横へずらす（映りの悪いテレビ）
+      float d = (P.y - uScan) / uBand;
+      float w = d > 0.0 ? exp(-d * 2.5) : exp(d * 30.0);
+      P.x += (hash(floor(P.y * 90.0)) - 0.5) * uTear * w * step(0.6, hash(floor(P.y * 23.0) + 7.0));
+      gl_Position = vec4(P, 0.0, 1.0);
       vA = aAttr;
     }`, `#version 300 es
     precision highp float;
@@ -464,7 +473,32 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
       o = vec4(col * a, a);
     }`);
   const U = {};
-  for (const n of ["uCenter", "uScale", "uAngle", "uN", "uC1", "uC2", "uAlpha", "uTime", "uGlow"]) U[n] = gl.getUniformLocation(prog, n);
+  for (const n of ["uCenter", "uScale", "uAngle", "uN", "uC1", "uC2", "uAlpha", "uTime", "uGlow", "uScan", "uBand", "uTear", "uSeed"])
+    U[n] = gl.getUniformLocation(prog, n);
+
+  // 走査ノイズ：全画面の三角形 1 枚。走査線の後ろに砂嵐の帯、先頭に明るい線、画面全体にうっすら粒
+  const noiseProg = compile(`#version 300 es
+    void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`,
+  `#version 300 es
+    precision highp float;
+    out vec4 o;
+    uniform float uScanPx, uBandPx, uSeed, uGrain, uPx, uDark; uniform vec3 uInk;
+    float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uSeed * 91.7) * 43758.5453); }
+    void main() {
+      vec2 f = gl_FragCoord.xy;
+      float d = (f.y - uScanPx) / uBandPx;                          // > 0：走査線より上（通り過ぎた側）
+      float band = d > 0.0 ? exp(-d * 2.5) : exp(d * 30.0);
+      float n = h(floor(f / uPx));                                  // 砂嵐の粒
+      float streak = h(vec2(0.0, floor(f.y / (2.0 * uPx))));         // 横に伸びる筋
+      float a = band * (0.25 + 0.55 * n * step(0.35, streak)) + uGrain * n;
+      float edge = exp(-abs(f.y - uScanPx) / (1.5 * uPx));           // 走査線の先頭
+      vec3 grey = vec3(uDark > 0.5 ? n : 1.0 - n * 0.85);
+      vec3 col = mix(grey, uInk, 0.25) * (1.0 - edge) + uInk * edge;
+      o = vec4(col, clamp(a + edge * 0.8, 0.0, 0.85));
+    }`);
+  const NU = {};
+  for (const n of ["uScanPx", "uBandPx", "uSeed", "uGrain", "uPx", "uDark", "uInk"]) NU[n] = gl.getUniformLocation(noiseProg, n);
+  const emptyVao = gl.createVertexArray();
   const LP = gl.getAttribLocation(prog, "aPos"), LA = gl.getAttribLocation(prog, "aAttr");
 
   const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
@@ -501,7 +535,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   // ==================================================================================
   // 配置：大・中・小の円をランダムに、重なりを少しだけ許して画面いっぱいに詰める
   // ==================================================================================
-  let flowers = [], W = 0, H = 0, dpr = 1;
+  let flowers = [], next = null, W = 0, H = 0, dpr = 1;
   const MAX = coarse ? 80 : 130;                            // 描画が重くなりすぎないよう上限
   const SIZES = {
     L: { d: [0.44, 0.56], res: 80, total: 3.5e6, grid: 44, steps: 280, maxVerts: coarse ? 16000 : 28000, tries: 36000 },
@@ -550,22 +584,36 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     f.dead = true;
     if (f.vao) { gl.deleteVertexArray(f.vao); gl.deleteBuffer(f.vbo); gl.deleteBuffer(f.ibo); f.vao = null; }
   }
-  function enqueue(f) { queue.push(f); queue.sort((a, b) => b.r - a.r); pump(); }
+  function enqueue(f) { queue.push(f); queue.sort((a, b) => (b.prio | 0) - (a.prio | 0) || b.r - a.r); pump(); }
 
+  function makeSet(prio) {
+    const L = layout();
+    L.sort((a, b) => b.r - a.r);
+    // 一番大きい花は選んだプリセットそのもの
+    return L.map((o, i) => { const f = newFlower(o, i === 0); f.prio = prio; f.pre = prio === 0; return f; });
+  }
   function regenerate() {
     resetPool();
     flowers.forEach(freeFlower);
-    const L = layout();
-    L.sort((a, b) => b.r - a.r);
-    flowers = L.map((o, i) => newFlower(o, i === 0));     // 一番大きい花は選んだプリセットそのもの
-    flowers.slice().forEach(enqueue);
+    if (next) next.forEach(freeFlower);
+    next = null;
+    flowers = makeSet(1);
+    flowers.forEach(enqueue);
+    cyc.phase = "grow";
   }
+  // 次の花の組を裏で計算しておく（走査線が通ったところから入れ替わる）
+  function prepareNext() {
+    if (next) return;
+    next = makeSet(0);
+    next.forEach(enqueue);
+  }
+  const settled = set => set.every(f => f.ready || f.failed);
 
   function onResult(m) {
     const f = pending.get(m.job);
     pending.delete(m.job);
     if (!f || f.dead) return;
-    if (m.fail) { updateStatus(); return; }
+    if (m.fail) { f.failed = true; updateStatus(); return; }
     f.q = m.q;
     f.vao = gl.createVertexArray(); f.vbo = gl.createBuffer(); f.ibo = gl.createBuffer();
     gl.bindVertexArray(f.vao);
@@ -579,7 +627,9 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
 
   let statusTimer = null;
   function updateStatus() {
-    const done = flowers.filter(f => f.ready).length, total = flowers.length;
+    const done = flowers.filter(f => f.ready || f.failed).length, total = flowers.length;
+    if (done === total && updateStatus.shown === flowers) return;    // 裏で次の花を計算中は表示し直さない
+    updateStatus.shown = done === total ? flowers : null;
     statusEl.style.opacity = 1;
     statusEl.textContent = done < total ? `咲いています… ${done} / ${total}` : `${total} 輪`;
     clearTimeout(statusTimer);
@@ -597,15 +647,76 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     if (!W) { W = nW; H = nH; return true; }
     // 幅が変わった（回転など）ら並べ直す。高さだけの小さな変化（アドレスバー）は位置を伸縮するだけ
     if (Math.abs(nW - W) > 1 || Math.abs(nH - H) / H > 0.2) { W = nW; H = nH; return true; }
-    if (nH !== H) { for (const f of flowers) f.y *= nH / H; H = nH; }
+    if (nH !== H) { for (const f of flowers.concat(next || [])) f.y *= nH / H; H = nH; }
     return false;
   }
 
+  // ==================================================================================
+  // 繰り返し：咲き終わる → 12 秒静か → 80 bpm の心拍 → 加速しながら走査ノイズ → 次の花へ
+  // ==================================================================================
+  const CALM = 12, BEAT = 6, RUSH = 3.2, BPM0 = 80, BPM1 = 210;
+  const cyc = { phase: "grow", t: 0, beat: 0, bpm: BPM0, seed: 0 };
+  // 心拍の形：「ドクン（強）・ドクン（弱）」の 2 つの山
+  const bump = (x, c, w) => { const u = (x - c) / w; return Math.exp(-u * u); };
+  const heart = ph => bump(ph, 0.02, 0.045) + 0.55 * bump(ph, 0.24, 0.05);
+
+  function stepCycle(dt) {
+    cyc.t += dt;
+    if (cyc.phase === "grow") {
+      if (flowers.length && settled(flowers)) { cyc.phase = "calm"; cyc.t = 0; }
+      return;
+    }
+    if (!opt.auto) { cyc.phase = "calm"; cyc.t = 0; return; }
+    if (cyc.phase === "calm") {
+      prepareNext();
+      if (cyc.t >= CALM) { cyc.phase = "beat"; cyc.t = 0; cyc.beat = 0; cyc.bpm = BPM0; }
+    } else if (cyc.phase === "beat") {
+      cyc.bpm = BPM0;
+      // 次の花が計算し終わるまでは 80 bpm のまま待つ
+      if (cyc.t >= BEAT && next && settled(next)) { cyc.phase = "rush"; cyc.t = 0; }
+    } else if (cyc.phase === "rush") {
+      const p = Math.min(1, cyc.t / RUSH);
+      cyc.bpm = BPM0 + (BPM1 - BPM0) * p * p;
+      if (p >= 1) {
+        flowers.forEach(freeFlower);
+        flowers = next.filter(f => f.ready); next = null;
+        for (const f of flowers) { f.prio = 1; f.pre = false; }
+        cyc.phase = "calm"; cyc.t = 0;
+        updateStatus();
+      }
+    }
+    if (cyc.phase === "beat" || cyc.phase === "rush") cyc.beat += dt * cyc.bpm / 60;
+  }
+
   let paused = false, last = performance.now(), clock = 0;
+  function drawSet(set, now, beating, scanClip, bandClip, tear) {
+    const cx = W / 2, cy = H / 2, far = Math.hypot(cx, cy);
+    for (const f of set) {
+      if (!f.ready) continue;
+      const fade = f.pre ? 1 : Math.min(1, (now - f.born) / 1400);
+      // 心拍は画面の中心から外へ、少し遅れて伝わる
+      const env = beating ? heart(((cyc.beat - 0.22 * Math.hypot(f.x - cx, f.y - cy) / far) % 1 + 1) % 1) : 0;
+      const sc = 1 + 0.075 * env;
+      const [c1, c2] = inkFor(f);
+      gl.uniform2f(U.uCenter, f.x / W * 2 - 1, 1 - f.y / H * 2);
+      gl.uniform2f(U.uScale, f.r / W * 2 * sc, f.r / H * 2 * sc);
+      gl.uniform1f(U.uAngle, f.angle + f.spin * clock);
+      gl.uniform1i(U.uN, f.n);
+      gl.uniform3fv(U.uC1, c1); gl.uniform3fv(U.uC2, c2);
+      // 小さな花は線が重なって白飛びしやすいので少し薄く
+      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1) * (1 + 0.6 * env));
+      gl.uniform1f(U.uTime, f.tOff + clock * f.tempo);
+      gl.uniform1f(U.uScan, scanClip); gl.uniform1f(U.uBand, bandClip); gl.uniform1f(U.uTear, tear);
+      gl.bindVertexArray(f.vao);
+      gl.drawElementsInstanced(gl.LINE_STRIP, f.count, gl.UNSIGNED_INT, 0, f.reps);
+    }
+  }
+
   function frame(now) {
-    const dt = Math.min(0.1, (now - last) / 1000); last = now;
-    if (!paused) clock += dt;
+    const dt = paused ? 0 : Math.min(0.1, (now - last) / 1000); last = now;
+    clock += dt;
     if (resize()) regenerate();
+    stepCycle(dt);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(bgRGB[0], bgRGB[1], bgRGB[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(prog);
@@ -613,20 +724,34 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     if (dark) gl.blendFunc(gl.ONE, gl.ONE);                 // 暗い背景：光の線を加算
     else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);      // 明るい背景：墨を重ねる
     gl.uniform1f(U.uGlow, 1);
-    for (const f of flowers) {
-      if (!f.ready) continue;
-      const fade = Math.min(1, (now - f.born) / 1400);
-      const [c1, c2] = inkFor(f);
-      gl.uniform2f(U.uCenter, f.x / W * 2 - 1, 1 - f.y / H * 2);
-      gl.uniform2f(U.uScale, f.r / W * 2, f.r / H * 2);
-      gl.uniform1f(U.uAngle, f.angle + f.spin * clock);
-      gl.uniform1i(U.uN, f.n);
-      gl.uniform3fv(U.uC1, c1); gl.uniform3fv(U.uC2, c2);
-      // 小さな花は線が重なって白飛びしやすいので少し薄く
-      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1));
-      gl.uniform1f(U.uTime, f.tOff + clock * f.tempo);
-      gl.bindVertexArray(f.vao);
-      gl.drawElementsInstanced(gl.LINE_STRIP, f.count, gl.UNSIGNED_INT, 0, f.reps);
+    if (cyc.phase === "rush" && Math.random() < 0.5) cyc.seed = Math.random() * 100;
+    gl.uniform1f(U.uSeed, cyc.seed);
+    const beating = cyc.phase === "beat" || cyc.phase === "rush";
+    if (cyc.phase !== "rush") {
+      drawSet(flowers, now, beating, -9, 1, 0);
+    } else {
+      // 走査線は上から下へ。通り過ぎた上側は次の花、まだの下側は今の花（心拍が加速中）
+      const p = Math.min(1, cyc.t / RUSH);
+      const bandPx = H * 0.22, scanY = -0.02 * H + p * (H + bandPx * 0.6);   // CSS px（上から）
+      const scanClip = 1 - scanY / H * 2, bandClip = bandPx / H * 2;
+      const tear = 0.05 + 0.12 * p;
+      const split = Math.max(0, Math.min(canvas.height, Math.round((H - scanY) * dpr)));
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(0, 0, canvas.width, split);
+      drawSet(flowers, now, true, scanClip, bandClip, tear);
+      gl.scissor(0, split, canvas.width, canvas.height - split);
+      drawSet(next, now, false, scanClip, bandClip, tear);
+      gl.disable(gl.SCISSOR_TEST);
+      // 砂嵐の帯
+      gl.useProgram(noiseProg);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.uniform1f(NU.uScanPx, (H - scanY) * dpr); gl.uniform1f(NU.uBandPx, bandPx * dpr);
+      gl.uniform1f(NU.uSeed, cyc.seed); gl.uniform1f(NU.uPx, Math.max(1, dpr * 1.5));
+      gl.uniform1f(NU.uGrain, 0.05 + 0.1 * Math.sin(Math.PI * p));
+      gl.uniform1f(NU.uDark, dark ? 1 : 0);
+      gl.uniform3fv(NU.uInk, (inksRGB[0] || [[1, 1, 1], [1, 1, 1]])[dark ? 1 : 0]);
+      gl.bindVertexArray(emptyVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
@@ -658,13 +783,13 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
       opt[k] = $(id).value; opt.style = ""; styleSel.value = ""; applyStyle(); saveOpt();
     });
 
-  function seg(id, key) {
+  function seg(id, key, after = regenerate) {
     const btns = [...$(id).querySelectorAll("button")];
     const sync = () => btns.forEach(b => b.setAttribute("aria-pressed", +b.dataset.v === opt[key]));
-    btns.forEach(b => b.addEventListener("click", () => { opt[key] = +b.dataset.v; sync(); saveOpt(); regenerate(); }));
+    btns.forEach(b => b.addEventListener("click", () => { opt[key] = +b.dataset.v; sync(); saveOpt(); after(); }));
     sync();
   }
-  seg("sizeSeg", "size"); seg("varySeg", "vary");
+  seg("sizeSeg", "size"); seg("varySeg", "vary"); seg("autoSeg", "auto", () => {});
 
   $("settings").addEventListener("click", () => {
     const open = $("panel").hidden;
@@ -697,7 +822,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
       if (i < 0) return;
       freeFlower(hit);
       const nf = newFlower(hit, false);
-      flowers[i] = nf; enqueue(nf);
+      nf.prio = 1; flowers[i] = nf; enqueue(nf);
     }, 360);
   });
   // 操作バーはしばらく触らないと消える
