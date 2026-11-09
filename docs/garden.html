@@ -657,7 +657,8 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   const CALM = 12, BEAT = 6, RUSH = 3.2, BPM0 = 80, BPM1 = 210;
   const cyc = { phase: "grow", t: 0, beat: 0, bpm: BPM0, seed: 0 };
   // 心拍の形：「ドクン（強）・ドクン（弱）」の 2 つの山
-  const heart = ph => Math.exp(-((ph - 0.02) / 0.045) ** 2) + 0.55 * Math.exp(-((ph - 0.24) / 0.05) ** 2);
+  const bump = (x, c, w) => { const u = (x - c) / w; return Math.exp(-u * u); };
+  const heart = ph => bump(ph, 0.02, 0.045) + 0.55 * bump(ph, 0.24, 0.05);
 
   function stepCycle(dt) {
     cyc.t += dt;
