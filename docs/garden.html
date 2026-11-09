@@ -50,6 +50,24 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   border-radius: 8px; padding: 6px 0; cursor: pointer; }
 #panel .seg button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
 #bar button[aria-expanded=true] { background: rgba(255,255,255,.14); }
+#saveSheet {
+  position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom)); background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+#saveSheet .box {
+  width: min(360px, 100%); max-height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 10px;
+  padding: 14px; border-radius: 16px; background: rgba(20, 20, 30, .92); border: 1px solid var(--line); color: var(--fg);
+}
+#saveSheet img { width: 100%; height: 100%; max-height: 52dvh; object-fit: contain; border-radius: 10px;
+  -webkit-touch-callout: default; user-select: auto; }
+#saveSheet .btns { display: grid; gap: 8px; }
+#saveSheet button, #saveSheet a {
+  font: inherit; font-size: 15px; text-align: center; text-decoration: none; padding: 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--fg); cursor: pointer;
+}
+#saveSheet .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+#saveSheet p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
 #nogl { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: #ccc; }
 </style>
 </head>
@@ -75,11 +93,22 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   <h4>自動で咲き直す（12 秒後に心拍 → 加速して弾ける → 別の場所に次の花がゆっくり咲く）</h4>
   <div class="seg" id="autoSeg"><button data-v="1">オン</button><button data-v="0">オフ</button></div>
 </div>
+<div id="saveSheet" hidden role="dialog" aria-label="壁紙として保存">
+  <div class="box">
+    <img id="savePreview" alt="保存する画像">
+    <div class="btns">
+      <button id="saveShare" class="primary">写真に保存</button>
+      <a id="saveDownload" download="flower-garden.png">ファイルとしてダウンロード</a>
+      <button id="saveClose">閉じる</button>
+    </div>
+    <p id="saveHint"></p>
+  </div>
+</div>
 <div id="bar">
   <a href="3d-v3.html" title="3D 版 ver.3 へ">←</a>
   <button id="regen" class="primary">咲き直す</button>
   <button id="settings" aria-expanded="false" aria-controls="panel">設定</button>
-  <button id="save">PNG</button>
+  <button id="save">保存</button>
 </div>
 
 <script>
@@ -704,29 +733,33 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   }
 
   let paused = false, last = performance.now(), clock = 0;
-  function drawSet(set, now, beating) {
+  // view：壁紙用に別の大きさへ描くとき { W, H, full }。full なら咲きかけ・弾けかけでなく、咲ききった姿で描く
+  function drawSet(set, now, beating, view) {
+    const vw = view ? view.W : W, vh = view ? view.H : H, kx = vw / W, ky = vh / H, full = !!(view && view.full);
+    const ak = view && view.alphaK ? view.alphaK : 1;
     const cx = W / 2, cy = H / 2, far = Math.hypot(cx, cy);
     for (const f of set) {
       if (!f.ready) continue;
-      const fade = f.pre ? 1 : Math.max(0, Math.min(1, (now - f.born) / 2200));
+      const fade = f.pre || full ? 1 : Math.max(0, Math.min(1, (now - f.born) / 2200));
       if (fade <= 0) continue;
       const grow = 0.8 + 0.2 * (1 - (1 - fade) ** 3);         // 咲くときは少し小さい所から開く
       // 心拍は画面の中心から外へ、少し遅れて伝わる
       // 弾ける進み具合：弾けた花は心拍を止め、一瞬明るくなってから破片が消える
-      const b = cyc.phase === "burst" && f.popAt !== undefined ? Math.max(0, Math.min(1, (cyc.t - f.popAt) / POP)) : 0;
+      const b = !full && cyc.phase === "burst" && f.popAt !== undefined ? Math.max(0, Math.min(1, (cyc.t - f.popAt) / POP)) : 0;
       if (b >= 1) continue;
-      const popped = cyc.phase === "burst" && cyc.t >= f.popAt;
+      const popped = !full && cyc.phase === "burst" && cyc.t >= f.popAt;
       const env = beating && !popped ? heart(((cyc.beat - 0.22 * Math.hypot(f.x - cx, f.y - cy) / far) % 1 + 1) % 1) : 0;
       const flash = popped ? 1 + 1.8 * Math.exp(-b * 10) : 1, gone = popped ? (1 - b) ** 1.6 : 1;
       const sc = (1 + 0.075 * env) * grow;
       const [c1, c2] = inkFor(f);
-      gl.uniform2f(U.uCenter, f.x / W * 2 - 1, 1 - f.y / H * 2);
-      gl.uniform2f(U.uScale, f.r / W * 2 * sc, f.r / H * 2 * sc);
+      const r = f.r * kx;                                       // 円のまま（縦横で同じ半径）
+      gl.uniform2f(U.uCenter, f.x * kx / vw * 2 - 1, 1 - f.y * ky / vh * 2);
+      gl.uniform2f(U.uScale, r / vw * 2 * sc, r / vh * 2 * sc);
       gl.uniform1f(U.uAngle, f.angle + f.spin * clock);
       gl.uniform1i(U.uN, f.n);
       gl.uniform3fv(U.uC1, c1); gl.uniform3fv(U.uC2, c2);
       // 小さな花は線が重なって白飛びしやすいので少し薄く
-      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1) * (1 + 0.6 * env) * flash * gone);
+      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1) * (1 + 0.6 * env) * flash * gone * ak);
       gl.uniform1f(U.uTime, f.tOff + clock * f.tempo);
       gl.uniform1f(U.uBurst, popped ? Math.max(b, 0.001) : 0); gl.uniform1f(U.uSeed, f.tOff);
       gl.bindVertexArray(f.vao);
@@ -789,11 +822,99 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     const open = $("panel").hidden;
     $("panel").hidden = !open; $("settings").setAttribute("aria-expanded", open);
   });
-  $("save").addEventListener("click", () => {
-    frame.capture = () => {
-      const a = document.createElement("a"); a.download = "flower-garden.png"; a.href = canvas.toDataURL("image/png"); a.click();
-    };
+  // ==================================================================================
+  // 壁紙として保存：端末の画面と同じ縦横比・実ピクセルで描き直して PNG にする
+  //   iPhone / Android：共有シートから「画像を保存」で写真に入る（Web Share API）
+  //   うまくいかない端末：プレビューを長押し、またはダウンロード
+  // ==================================================================================
+  function renderWallpaper() {
+    let sw = screen.width || W, sh = screen.height || H;
+    if (coarse) { const a = Math.min(sw, sh), b = Math.max(sw, sh); sw = a; sh = b; }   // スマホは縦向きの壁紙
+    const maxRB = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), vp = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+    const k = Math.min(window.devicePixelRatio || 1, 3, maxRB / Math.max(sw, sh), vp[0] / sw, vp[1] / sh);
+    const pw = Math.round(sw * k), ph = Math.round(sh * k);
+    // 4x MSAA で描いて、普通の描画先へ解決してから読み出す
+    const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0);
+    const msRb = gl.createRenderbuffer(), rb = gl.createRenderbuffer(), msFb = gl.createFramebuffer(), fb = gl.createFramebuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, msRb);
+    if (samples > 0) gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, pw, ph);
+    else gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, pw, ph);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, msFb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, msRb);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, pw, ph);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, msFb);
+    gl.viewport(0, 0, pw, ph);
+    gl.clearColor(bgRGB[0], bgRGB[1], bgRGB[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(prog);
+    gl.enable(gl.BLEND);
+    if (dark) gl.blendFunc(gl.ONE, gl.ONE); else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(U.uGlow, 1);
+    // 線の太さは常に 1 ピクセルなので、画面より高い解像度で描くと薄く見える。その分だけ濃くする
+    drawSet(flowers, performance.now(), false, { W: sw, H: sh, full: true, alphaK: Math.min(2, Math.max(1, k / dpr)) });
+    gl.bindVertexArray(null); gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, msFb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, fb);
+    gl.blitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    const px = new Uint8Array(pw * ph * 4);
+    gl.readPixels(0, 0, pw, ph, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    for (const o of [msFb, fb]) gl.deleteFramebuffer(o);
+    for (const o of [msRb, rb]) gl.deleteRenderbuffer(o);
+
+    // WebGL は下から上の順なので、上下を入れ替えて 2D キャンバスへ
+    const c2 = document.createElement("canvas"); c2.width = pw; c2.height = ph;
+    const ctx = c2.getContext("2d"), img = ctx.createImageData(pw, ph), row = pw * 4;
+    for (let y = 0; y < ph; y++) img.data.set(px.subarray((ph - 1 - y) * row, (ph - y) * row), y * row);
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+    ctx.putImageData(img, 0, 0);
+    return new Promise(res => c2.toBlob(res, "image/png"));
+  }
+
+  let saveFile = null, saveUrl = null;
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  function closeSave() {
+    $("saveSheet").hidden = true;
+    if (saveUrl) { URL.revokeObjectURL(saveUrl); saveUrl = null; }
+    saveFile = null;
+  }
+  $("save").addEventListener("click", async () => {
+    $("save").disabled = true;
+    try {
+      const blob = await renderWallpaper();
+      if (!blob) throw new Error("toBlob failed");
+      const d = new Date(), stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}${String(d.getSeconds()).padStart(2, "0")}`;
+      const name = `flower-garden-${stamp}.png`;
+      saveFile = new File([blob], name, { type: "image/png" });
+      saveUrl = URL.createObjectURL(blob);
+      $("savePreview").src = saveUrl;
+      $("saveDownload").href = saveUrl; $("saveDownload").download = name;
+      const canShare = !!(navigator.canShare && navigator.canShare({ files: [saveFile] }));
+      $("saveShare").hidden = !canShare;
+      $("saveHint").textContent = isIOS && !canShare
+        ? "上の画像を長押しして「“写真”に保存」で写真アプリに入ります。壁紙は 設定 → 壁紙 から選べます。"
+        : isIOS
+        ? "「写真に保存」→ 共有シートの「画像を保存」で写真アプリに入ります。うまくいかないときは、上の画像を長押しして「“写真”に保存」。壁紙は 設定 → 壁紙 から選べます。"
+        : canShare
+          ? "「写真に保存」→ 共有先から保存（Android はギャラリー／フォト等）。または「ファイルとしてダウンロード」。上の画像を長押しして保存もできます。"
+          : "「ファイルとしてダウンロード」で保存できます。スマホでは上の画像を長押しして保存もできます。";
+      $("saveSheet").hidden = false;
+    } catch (err) {
+      console.warn(err);
+      statusEl.style.opacity = 1; statusEl.textContent = "画像を作れませんでした";
+    } finally {
+      $("save").disabled = false;
+    }
   });
+  // 共有シートは、ボタンを押したその場で呼ぶ（iOS は操作の直後でないと開かない）
+  $("saveShare").addEventListener("click", () => {
+    if (!saveFile) return;
+    navigator.share({ files: [saveFile] }).catch(err => {
+      if (err && err.name !== "AbortError") $("saveHint").textContent = "共有シートを開けませんでした。上の画像を長押しして保存してください。";
+    });
+  });
+  $("saveClose").addEventListener("click", closeSave);
+  $("saveSheet").addEventListener("click", e => { if (e.target === $("saveSheet")) closeSave(); });
   // 花をタップするとその花だけ咲き直す（ダブルタップで 3D 版 ver.3 に開く）
   let lastTap = { f: null, t: 0 };
   canvas.addEventListener("click", e => {
