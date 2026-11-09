@@ -736,6 +736,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   // view：壁紙用に別の大きさへ描くとき { W, H, full }。full なら咲きかけ・弾けかけでなく、咲ききった姿で描く
   function drawSet(set, now, beating, view) {
     const vw = view ? view.W : W, vh = view ? view.H : H, kx = vw / W, ky = vh / H, full = !!(view && view.full);
+    const ak = view && view.alphaK ? view.alphaK : 1;
     const cx = W / 2, cy = H / 2, far = Math.hypot(cx, cy);
     for (const f of set) {
       if (!f.ready) continue;
@@ -758,7 +759,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
       gl.uniform1i(U.uN, f.n);
       gl.uniform3fv(U.uC1, c1); gl.uniform3fv(U.uC2, c2);
       // 小さな花は線が重なって白飛びしやすいので少し薄く
-      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1) * (1 + 0.6 * env) * flash * gone);
+      gl.uniform1f(U.uAlpha, (dark ? 0.4 : 0.5) * fade * (f.cls === "S" ? 0.8 : f.cls === "M" ? 0.9 : 1) * (1 + 0.6 * env) * flash * gone * ak);
       gl.uniform1f(U.uTime, f.tOff + clock * f.tempo);
       gl.uniform1f(U.uBurst, popped ? Math.max(b, 0.001) : 0); gl.uniform1f(U.uSeed, f.tOff);
       gl.bindVertexArray(f.vao);
@@ -849,7 +850,8 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     gl.enable(gl.BLEND);
     if (dark) gl.blendFunc(gl.ONE, gl.ONE); else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1f(U.uGlow, 1);
-    drawSet(flowers, performance.now(), false, { W: sw, H: sh, full: true });
+    // 線の太さは常に 1 ピクセルなので、画面より高い解像度で描くと薄く見える。その分だけ濃くする
+    drawSet(flowers, performance.now(), false, { W: sw, H: sh, full: true, alphaK: Math.min(2, Math.max(1, k / dpr)) });
     gl.bindVertexArray(null); gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, msFb); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, fb);
     gl.blitFramebuffer(0, 0, pw, ph, 0, 0, pw, ph, gl.COLOR_BUFFER_BIT, gl.NEAREST);
@@ -889,7 +891,9 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
       $("saveDownload").href = saveUrl; $("saveDownload").download = name;
       const canShare = !!(navigator.canShare && navigator.canShare({ files: [saveFile] }));
       $("saveShare").hidden = !canShare;
-      $("saveHint").textContent = isIOS
+      $("saveHint").textContent = isIOS && !canShare
+        ? "上の画像を長押しして「“写真”に保存」で写真アプリに入ります。壁紙は 設定 → 壁紙 から選べます。"
+        : isIOS
         ? "「写真に保存」→ 共有シートの「画像を保存」で写真アプリに入ります。うまくいかないときは、上の画像を長押しして「“写真”に保存」。壁紙は 設定 → 壁紙 から選べます。"
         : canShare
           ? "「写真に保存」→ 共有先から保存（Android はギャラリー／フォト等）。または「ファイルとしてダウンロード」。上の画像を長押しして保存もできます。"
