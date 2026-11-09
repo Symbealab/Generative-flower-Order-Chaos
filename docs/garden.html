@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#05060b">
+<meta name="theme-color" content="#f6efe8">
 <title>Flower Garden — 流線の花畑</title>
 <meta name="description" content="3D 版 ver.3 の流線を上から見た姿だけを使い、形の方向性と色を選び、パラメータを少しずつ変えた花を大・中・小ランダムに画面いっぱいに並べて動かす。">
 <style>
-:root { --bg: #05060b; --fg: #e8ecf6; --muted: #8d93a6; --bar: rgba(16, 18, 28, .72); --line: rgba(255, 255, 255, .14); --accent: #f07aa8; }
+:root { --bg: #f6efe8; --fg: #e8ecf6; --muted: #8d93a6; --bar: rgba(16, 18, 28, .72); --line: rgba(255, 255, 255, .14); --accent: #f07aa8; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
@@ -69,7 +69,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     <label>線（明）<input type="color" id="c2"></label>
   </div>
   <h4>大きさ</h4>
-  <div class="seg" id="sizeSeg"><button data-v="0.7">小さめ</button><button data-v="1">ふつう</button><button data-v="1.4">大きめ</button></div>
+  <div class="seg" id="sizeSeg"><button data-v="0.5">小さめ</button><button data-v="0.7">ふつう</button><button data-v="1">大きめ</button></div>
   <h4>ゆらぎ（元の形からの離れ方）</h4>
   <div class="seg" id="varySeg"><button data-v="0.25">小</button><button data-v="0.55">中</button><button data-v="1">大</button></div>
 </div>
@@ -115,8 +115,9 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   };
-  const opt = { preset: "0", style: "0", bg: null, c1: null, c2: null, size: 1, vary: 0.55, ...(store.get("gfoc.garden.v2") || {}) };
-  const saveOpt = () => store.set("gfoc.garden.v2", opt);
+  // 基本のデザイン：形は「ミックス」、色は「紅と藍」、大きさは「ふつう」
+  const opt = { preset: "mix", style: "0", bg: null, c1: null, c2: null, size: 0.7, vary: 0.55, ...(store.get("gfoc.garden.v3") || {}) };
+  const saveOpt = () => store.set("gfoc.garden.v3", opt);
   // 流線の設定（ver.3 の初期値）
   const FLOW = { phi: 82, thr: 0.45, minSize: 0.16 };
   const VB = 1.08, VW = 1.25;
@@ -469,6 +470,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
   // 色：[名前, 背景, [線の暗い色, 明るい色] の組]。組が複数あるものは花ごとに選ぶ
   const STYLES = [
+    ["紅と藍（基本）", "#f6efe8", [["#e0507f", "#1c1757"]]],
     ["夜光", "#05060b", [["#1f6bff", "#c8f6ff"]]],
     ["金糸", "#0c0907", [["#9c561a", "#ffe3a3"]]],
     ["夜桜", "#0b0509", [["#c2306e", "#ffd6ea"]]],
@@ -477,7 +479,6 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
     ["炎", "#0a0503", [["#b8320c", "#ffd08a"]]],
     ["色とりどり（夜）", "#05060b", [["#1f6bff", "#c8f6ff"], ["#9c561a", "#ffe3a3"], ["#c2306e", "#ffd6ea"], ["#138a72", "#c9ffe9"], ["#6b3cff", "#e6dcff"]]],
     ["墨流し", "#f3eee4", [["#7a7f8a", "#111318"]]],
-    ["紅と藍", "#f6efe8", [["#e0507f", "#1c1757"]]],
     ["藍染", "#eef2f3", [["#5b8fd0", "#0b1e4d"]]],
     ["翡翠", "#f1f4ef", [["#4fbf9a", "#073b30"]]],
     ["色とりどり（和紙）", "#f4efe6", [["#e0507f", "#1c1757"], ["#5b8fd0", "#0b1e4d"], ["#4fbf9a", "#073b30"], ["#d08a3a", "#3a1a05"], ["#7a7f8a", "#111318"]]],
@@ -501,7 +502,7 @@ canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh;
   // 配置：大・中・小の円をランダムに、重なりを少しだけ許して画面いっぱいに詰める
   // ==================================================================================
   let flowers = [], W = 0, H = 0, dpr = 1;
-  const MAX = coarse ? 60 : 100;                            // 描画が重くなりすぎないよう上限
+  const MAX = coarse ? 80 : 130;                            // 描画が重くなりすぎないよう上限
   const SIZES = {
     L: { d: [0.44, 0.56], res: 80, total: 3.5e6, grid: 44, steps: 280, maxVerts: coarse ? 16000 : 28000, tries: 36000 },
     M: { d: [0.27, 0.35], res: 64, total: 2e6, grid: 32, steps: 200, maxVerts: coarse ? 4500 : 8000, tries: 20000 },
